@@ -2,60 +2,110 @@
 
 Path: `beat-1-sandbox/unit-4/pull-request.md`
 
-Record of the pull request you opened against the Path Review repo, and of the evaluation
-runs that produced `eval-run.txt`. This file is graded at the path above; a copy kept
-anywhere else in the repository is not read.
-
-Complete every labelled field below. Each is graded on its own; content placed under the wrong
-label is not graded.
-
----
-
 ## Your pull request
 
 **Pull request**
 
-[Link to the pull request you opened. It must be the pull request's own page on the Path
-Review repo, not your fork's branch page.]
+https://github.com/codepath/pathreview-ai301-fa26-s1/pull/244
 
 **Branch**
 
-[The name of the branch the pull request comes from, exactly as it appears in your fork.
-The naming shape is a type prefix, then the issue number, then a short description. **The
-issue number in the branch name must be the number of the issue the pull request fixes** —
-a name carrying any other number does not satisfy this field.]
+fix/36-review-empty-profile-test
 
 ## Eval iterations
 
-Answer all four sections. Quote source text directly; paraphrase does not satisfy these
-fields.
-
 **Run history**
 
-[The agreement score of each run you did, in order. A single run is a complete answer if
-only one run occurred. **The last score in your list must match the agreement line in the
-`eval-run.txt` you committed** — that file is the record of your final run.]
+One complete evaluation run was performed.
+
+Run 1: 18/20 scored items — PASS.
+
+Final evaluation output:
+"agreement: 18/20 scored items  (bar: 18/20: PASS)"
+
+Category results:
+- clear-accept: 5/7
+- not-tested: 4/4
+- silent-drift: 4/4
+- standards-wall: 2/2
+- unreviewable: 3/3
 
 **Package analysis**
 
-[Pick one scored package (`pkg-01` through `pkg-20` — the four `calib-` packages are never
-scored). Name it by id, say what your rubric decided and what the gold label said, and
-explain why your rubric read it that way.]
+Package: pkg-02
+Category: clear-accept
+Gold label: accept
+My rubric's verdict: reject
+
+The evaluation reported:
+"failed: Testing provides observable evidence"
+
+The rubric's testing check requires that evidence show what was
+actually tested and what result was observed. My skill interpreted
+the evidence in pkg-02 as insufficient to establish that the PR
+was ready, so it rejected the package.
+
+The gold label was accept, which means my skill was stricter
+than the expected judgment for this package.
+
+This was one of two disagreements in the final evaluation.
+The other was pkg-08, where the gold label was accept but
+my skill rejected the package on repository-check evidence.
 
 **Check rationale**
 
-[Quote one check from the `rubric.md` you uploaded to `tools/pr-precheck/`, exactly as it reads now.
-Then say why it reads that way — what you revised to get there, or what you rejected in
-favour of it.]
+Check selected: Testing provides observable evidence
+
+Exact rubric text:
+
+"Testing provides observable evidence"
+
+Evidence:
+
+"The test evidence's commands, outputs, and before/after observations,
+compared with the plan's test plan and the PR's testing claims"
+
+Pass condition:
+
+"The evidence demonstrates what was actually checked and the observed result.
+Relevant behavior changes or remaining failures are identifiable.
+A failing or incomplete test can pass when accurately reported and its
+implications are disclosed; unsupported claims that the fix works fail."
+
+I designed this check to prioritize observable test results rather than
+unsupported statements that the code works.
+
+I deliberately allowed documented failures or incomplete tests to pass,
+provided the PR accurately describes them. This avoids rejecting every
+PR that includes an expected failure or known limitation.
+
+I kept observable evidence as a required check because a PR should not
+claim successful verification without showing what was tested.
 
 **Trade-offs**
 
-[Every check gives something up. Any one of these is a complete answer: a package whose
-result it changes, a canary you re-ran with `--only`, a case you accept it will miss, or a
-stated reason nothing changed elsewhere. "Nothing changed, and here is how I know" earns
-the point in full when the reason follows.]
+The main trade-off is that requiring explicit testing evidence can
+produce false rejections when the package contains enough information
+for a reviewer but the skill interprets that evidence too strictly.
 
----
+This happened in pkg-02:
+- Gold label: accept
+- Skill verdict: reject
+- Deciding check: Testing provides observable evidence
 
-Related paths: `eval-run.txt` in this directory; your skill's files in
-`tools/pr-precheck/`.
+A similar disagreement occurred in pkg-08:
+- Gold label: accept
+- Skill verdict: reject
+- Deciding check: Repository checks are accounted for
+
+I chose not to weaken these required checks after the evaluation because
+the skill already met the required 18/20 agreement threshold and correctly
+rejected all 13 packages in the four rejection categories.
+
+Weakening these checks without verifying the exact evidence in the
+disputed packages could make the skill accept PRs with undocumented
+testing gaps.
+
+The cost of this decision is that some valid PR packages may be
+rejected and require additional explanation or evidence.
+
