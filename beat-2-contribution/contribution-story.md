@@ -3,7 +3,7 @@
 Path: `beat-2-contribution/contribution-story.md`
 
 **Contribution Number:** [1]  
-**Student:** [Your CodePath student name]  
+**Student:** Simret Melak
 **GitHub Username:** Simret-Melak  
 **Issue:** https://github.com/apache/beam/issues/18832  
 **Pull Request:** Not opened yet
