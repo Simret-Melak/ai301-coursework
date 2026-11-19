@@ -4,8 +4,8 @@
 **Student:** Simret Melak  
 **GitHub Username:** Simret-Melak  
 **Issue:** https://github.com/jlab-sensing/ENTS-backend/issues/828  
-**Pull Request:** Not opened yet  
-**Current Status:** Claim and maintainer follow-up posted; local reproduction completed with result **NOT REPRODUCED** (the requested `/api/sensor/` change already exists on `main`). Awaiting maintainer confirmation. No fix implemented and no pull request opened.
+**Pull Request:** https://github.com/jlab-sensing/ENTS-backend/pull/881  
+**Current Status:** **Awaiting review.** After the maintainer clarified the requirement (remove the sensor id, not just the host path), I implemented the fix, added a committed regression test, passed the ship-gate (manifest checks + pr-precheck), and opened the pull request. No maintainer review yet.
 
 ---
 
@@ -55,9 +55,17 @@ I posted the follow-up to the maintainer reporting the findings and asking wheth
 
 I have not implemented a code fix or opened a pull request. My next step is to wait for maintainer confirmation on whether #828 is already resolved or whether another scenario remains.
 
-### Unit 7: Ship-gate and implementation verification — pending
+### Unit 7: Built the ship-gate and shipped the fix for ENTS-backend #828
 
-To be completed during Unit 7 after implementing and testing my contribution.
+During Unit 7 I installed the ship-gate hook (`python3 skill/install.py --repo ~/Desktop/Codepath/ENTS-backend`), which copies `check_gate.py` into `~/.claude/ship-gate/`, adds a `PreToolUse` hook to `~/.claude/settings.json`, swaps pr-precheck's scope to the real-repo scope, and drops a `ship-manifest.md` template into my clone. On the hook-test (`gh pr create --help`), I observed the **ship-gate stop** — its `BLOCK (setup)` line is recorded in the gate log. The voice-guard stop was not explicitly displayed in that run, so I can only confirm the ship-gate hook fired as expected, not that both stops surfaced.
+
+I then wrote my `ship-manifest.md` for `jlab-sensing/ENTS-backend` with the two checks CI actually gates on — frontend ESLint (`cd frontend && npm run lint`) and frontend Vitest via the CI command (`cd frontend && npm run coverage`) — sourcing each from `.github/workflows/test.yml` and the `frontend/Dockerfile` stages rather than inventing commands, and left the excluded table empty because no project check needed skipping.
+
+The ship-gate's own log (`~/.claude/ship-gate/gate-log.md`) records the real sequence: a `BLOCK (setup)` on the hook-test (expected), then a hand-run `PASS` at 20:16, then a `PASS` through the hook at 20:20 when the PR opened — each time both manifest checks ran green and all eight pr-precheck checks passed. The gate caught nothing I had to fix on this branch, but it did force me to make the manifest match the *CI* commands (`npm run coverage`, not a bare `vitest`) before it would pass, which is the discipline the unit is teaching.
+
+### Unit 7 (continued): The maintainer clarification that reopened the bug
+
+The most important Unit 7 event was not a tool: on 2026-11-17 the maintainer **jmadden173** replied to my NOT-REPRODUCED follow-up (https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6963665152) saying to "just update it to just `/api/sensor/` with no sensor id, as that is the way we configure it." My Unit 6 reproduction had correctly found the *host path* was already `/api/sensor/` on `main`, but the success screen still appended `{response.id}` (rendering `/api/sensor/42`). The clarification revealed the remaining bug, so I moved from "awaiting confirmation" to implementing a real fix.
 
 ### Unit 8: PR-monitor and maintainer communication — pending
 
@@ -156,52 +164,32 @@ I selected this issue based on the available evidence, but I have not yet posted
 
 The selected issue is ENTS-backend #828, titled *Updated endpoints when creating new cells*.
 
-According to the issue-scout investigation, creating new cells can result in outdated endpoint references appearing in power and TEROS sensor views.
+The issue text said that after creating a new cell, the success screen showed the old per-sensor power and TEROS endpoints and that they "should update them to `/api/sensor/`." Investigation and reproduction confirmed the problem is entirely in one frontend component: the "Cell Created Successfully!" screen in the Add Cell modal, which displays the upload endpoints for Power Data and TEROS Data.
 
-The reported problem involves references that should use the updated `/api/sensor/` endpoint.
-
-My initial understanding is that the application has an inconsistency between the API endpoint structure and the references used after new cells are created.
-
-I have not yet reproduced the behavior locally or established exactly which application components are responsible.
+An earlier merged commit (`eb634be` "fix: url") had already changed the *host path* on those rows from `/api/power/` and `/api/teros/` to `/api/sensor/`. What remained wrong was that both rows still appended the newly created cell's id — rendering `https://dirtviz.jlab.ucsc.edu/api/sensor/{response.id}` (e.g. `/api/sensor/42`). On 2026-11-17 the maintainer **jmadden173** clarified the exact requirement: the endpoint should be "just `/api/sensor/` with no sensor id, as that is the way we configure it" (https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6963665152). So the real, confirmed bug is the appended `{response.id}` suffix.
 
 ### Expected Behavior
 
-After a new cell is created, the relevant application views should use the correct API endpoints to retrieve or display their sensor-related information.
-
-Power and TEROS views should reference the appropriate current endpoint structure, including `/api/sensor/` where required.
-
-The precise expected responses and acceptance criteria will be confirmed by examining the issue description, existing API routes, and current tests.
+After a new cell is created, the success screen's Power Data and TEROS Data rows should each display exactly `https://dirtviz.jlab.ucsc.edu/api/sensor/` — the sensor endpoint with a trailing slash and **no** sensor id appended. No `/api/power/` or `/api/teros/` path should reappear.
 
 ### Current Behavior
 
-The issue reports that outdated endpoint references appear after new cells are created.
-
-This suggests that some application components may continue using older API paths instead of the current sensor endpoint.
-
-I have not yet confirmed whether the behavior occurs in the current repository version.
-
-My first technical task will be to reproduce the reported behavior and identify the code path responsible.
+On `main` (and `upstream/main`, HEAD `13413f2`) both rows rendered `https://dirtviz.jlab.ucsc.edu/api/sensor/{response.id}` — the created cell's id was appended, producing URLs like `/api/sensor/42`. This was confirmed both by reading the source and by a component test that renders the real success screen (see Reproduction Evidence and Testing Strategy).
 
 ### Affected Components
 
-Potentially affected areas include:
+The confirmed scope is a single frontend file — no backend, routing, or service code is involved:
 
-- The Python/Flask backend API.
-- API routing and sensor-related endpoints.
-- JavaScript frontend components associated with cell creation.
-- Power and TEROS sensor views.
-- Existing tests for API requests and cell creation.
+- `frontend/src/pages/profile/components/AddCellModal.jsx` — the create-cell success screen, at **L442** (Power Data row) and **L465** (TEROS Data row). `grep -rn "dirtviz.jlab.ucsc.edu/api" frontend/src` returns only those two lines.
 
-These are investigation targets, not confirmed files requiring modification.
-
-I will document exact filenames and functions after inspecting the repository.
+The endpoint text is static JSX whose only dynamic part was `{response.id}`; the backend sensor route (`/sensor/`, registered in `backend/api/__init__.py`) is correct and unchanged. The one existing test touching this component, `frontend/src/__tests__/Profile.test.jsx`, mocks `AddCellModal` and asserts nothing about the endpoint string, so no automated test guarded this behavior before my change.
 
 ### Toolkit
 
-- **Tool:** `issue-scout` for issue investigation and suitability grading.
-- **What it produced:** An ACCEPT verdict for ENTS-backend #828, with evidence of repository activity, issue availability, reported scope, and beginner-friendly labeling.
-- **Difficulties:** The scouting process identified a likely area for investigation but did not establish the exact implementation location or reproduce the bug.
-- **What changed:** I will use repository inspection and the Unit 6 reproduction workflow to verify the issue before planning implementation.
+- **Tool:** `issue-scout` for the initial suitability grade, then direct repository inspection (`grep`, reading `AddCellModal.jsx` and Git history) to pin the exact scope.
+- **What it produced:** An ACCEPT verdict for #828, then a confirmed single-file, two-line scope (`AddCellModal.jsx` L442/L465) and the key insight that the host path was already fixed but the `{response.id}` suffix remained.
+- **Difficulties:** The scout established suitability but not the real defect; and the issue text alone ("update them to `/api/sensor/`") was ambiguous enough that my first reproduction read it as already-fixed. The ambiguity was only resolved by the maintainer's clarifying comment.
+- **What changed:** I treated the maintainer's clarification — not the terse issue text — as the acceptance criterion, which redefined the bug as the appended sensor id and gave the fix a precise, testable target.
 
 ---
 
@@ -248,19 +236,24 @@ These steps have not yet been executed.
 
 ### Reproduction Evidence
 
-- **Result:** **NOT REPRODUCED** — the reported behavior does not occur on the current `main`. The requested `/api/sensor/` change already exists.
-- **Relevant commit:** `eb634be` ("fix: url"), already merged into `main`, changed the displayed Power and TEROS endpoints from `/api/power/` and `/api/teros/` to `/api/sensor/`.
-- **Exact affected file:** `frontend/src/pages/profile/components/AddCellModal.jsx` (the create-cell success screen) — the only frontend location that renders these upload endpoints.
-- **Dynamic test:** `cd frontend && npx vitest run src/__tests__/AddCellModal.issue828.test.jsx` — a component test that renders the success screen (mocked create-cell service) and asserts both rows show `/api/sensor/` with no `/api/power/` or `/api/teros/`. The test passed (`1 passed`).
-- **Limitation:** A full browser end-to-end test could not run locally because login requires Google OAuth credentials, so this is a component-level render rather than a live create-cell click. Because the endpoint text is static JSX, a live run would render the same strings.
-- **My findings:** Both the static investigation (code + Git history) and the passing component test confirm the requested change is already present, so there is no bug to reproduce on the current code.
+My reproduction has two honest phases, because the issue text and the maintainer's later clarification set different bars.
+
+**Phase 1 — Unit 6, against the literal issue text: NOT REPRODUCED.** The issue said "update them to `/api/sensor/`." Reading the code and Git history showed commit `eb634be` ("fix: url") had already changed the host path from `/api/power/` and `/api/teros/` to `/api/sensor/`, and a component test confirmed no old paths remained. Under that literal reading there was nothing to fix, so I recorded NOT REPRODUCED and asked the maintainer whether the issue was already resolved (follow-up: https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6924870574). This was the correct, evidenced call given the information at the time.
+
+**Phase 2 — Unit 7, against the maintainer's clarification: REPRODUCED.** On 2026-11-17 jmadden173 clarified the endpoint must carry "no sensor id" (https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6963665152). Re-tested against that bar, the bug reproduces:
+
+- **Result:** **REPRODUCED** — both rows render `https://dirtviz.jlab.ucsc.edu/api/sensor/{response.id}` (e.g. `/api/sensor/42`), appending the created cell's id, when the maintainer requires `/api/sensor/` with no id.
+- **Exact affected file/lines:** `frontend/src/pages/profile/components/AddCellModal.jsx` — L442 (Power Data) and L465 (TEROS Data), the only two matches for `dirtviz.jlab.ucsc.edu/api` in `frontend/src`.
+- **Dynamic evidence:** The committed regression test (`frontend/src/__tests__/AddCellModal.test.jsx`) renders the real success screen with a mocked `addCell` returning `{ id: 42, name: 'Test Cell' }`. Run against the base code (`upstream/main`, `13413f2`) in a throwaway git worktree it **FAILS** on `expect(url).toMatch(/\/api\/sensor\/$/)` because both rows render `.../api/sensor/42`; run against the fixed branch it **PASSES**. (Full before/after output is in Testing Strategy.)
+- **Limitation:** A full browser end-to-end click-through could not run locally because login requires Google OAuth credentials (`docs/development.md`); the endpoint text is static JSX whose only dynamic part was `{response.id}`, so the component-level render exercises the exact code the issue concerns.
+- **My findings:** The host path was already correct, but the `{response.id}` suffix — the part the maintainer flagged — was still present on `main`, and the committed test fails on base code and passes on the fix, confirming a genuine, reproducible defect.
 
 ### Toolkit
 
 - **Tool:** Unit 6 reproduction workflow, Vitest component test, and `repro-check`.
-- **What it produced:** A documented reproduction report with a NOT REPRODUCED result, a passing component test as evidence, and an **ACCEPT** verdict from `repro-check`.
-- **Difficulties:** The reported bug appeared already fixed, and a full end-to-end test was blocked by Google OAuth, so I had to find the smallest relevant test (a component render) that still exercised the exact code the issue describes.
-- **What changed:** I shifted from attempting a browser reproduction to a component-level test, kept my reproduction files local via `.git/info/exclude`, and recorded an honest NOT REPRODUCED outcome instead of inventing a bug.
+- **What it produced:** A documented reproduction report (`repro-828.md`) that honestly captured both phases — NOT REPRODUCED against the literal issue text, then REPRODUCED against the maintainer's clarified "no sensor id" requirement with before/after component-test output as evidence. `repro-check` graded the package **ACCEPT**.
+- **Difficulties:** The bug first appeared already fixed (the host path was), and a full end-to-end test was blocked by Google OAuth, so I had to find the smallest relevant test (a component render) that still exercised the exact code the issue describes.
+- **What changed:** I shifted from a browser reproduction to a component-level test, kept my reproduction files local via `.git/info/exclude`, recorded an honest NOT REPRODUCED outcome rather than inventing a bug, and then updated the report to REPRODUCED once the maintainer's clarification changed the acceptance bar.
 
 ---
 
@@ -268,47 +261,36 @@ These steps have not yet been executed.
 
 ### Analysis
 
-The reported issue appears to involve outdated endpoint references after new cells are created.
-
-My initial investigation will focus on identifying where the affected API paths are defined and used.
-
-I will inspect both the backend routes and any frontend components making requests to those endpoints.
-
-The goal is to determine whether the problem is caused by outdated frontend references, backend routing behavior, or a mismatch between the two.
-
-I will avoid assuming the solution until I can reproduce the issue and understand the relevant code.
+The root cause is a presentation-layer string, not a routing or data problem. The create-cell success screen in `frontend/src/pages/profile/components/AddCellModal.jsx` renders the Power Data (L442) and TEROS Data (L465) upload endpoints as static JSX, and both lines interpolate the created cell's id: `https://dirtviz.jlab.ucsc.edu/api/sensor/{response.id}`. The backend sensor route is correct and the host path was already fixed by `eb634be`; the remaining defect is purely the `{response.id}` fragment on these two lines. The maintainer's clarification ("no sensor id") makes removing that fragment the exact fix.
 
 ### Proposed Solution
 
-My tentative approach is to locate the outdated endpoint references associated with the power and TEROS views and update them to use the current API structure.
+Remove the `{response.id}` interpolation from both endpoint lines so each renders exactly `https://dirtviz.jlab.ucsc.edu/api/sensor/`:
 
-If the current backend routes confirm that `/api/sensor/` is the correct path, I will update the relevant references and adjust associated tests.
+```diff
+- https://dirtviz.jlab.ucsc.edu/api/sensor/{response.id}
++ https://dirtviz.jlab.ucsc.edu/api/sensor/
+```
 
-I will keep the changes focused on the reported issue and avoid modifying unrelated functionality.
-
-The final solution may differ after examining the code and reproducing the behavior.
+applied identically at L442 and L465. I deliberately did **not** change anything else: `response` stays in scope because it is still used elsewhere on the success screen (`Cell: {response.name}`); no backend, routing, or `services/*.js` code is touched; and I did not reformat unrelated lines (pre-existing Prettier drift) in order to keep the diff scoped to #828.
 
 ### Implementation Plan
 
-1. Read the repository's contribution guidelines and development documentation.
-2. Set up the project locally.
-3. Reproduce the reported outdated endpoint behavior.
-4. Identify the responsible frontend or backend code.
-5. Confirm the intended endpoint structure.
-6. Implement the smallest appropriate fix.
-7. Add or update relevant automated tests where practical.
-8. Run the targeted tests and repository-required checks.
-9. Review the changes for unrelated modifications.
-10. Document the implementation and prepare a pull request.
+1. Confirm the only two occurrences with `grep -n "dirtviz.jlab.ucsc.edu/api" frontend/src/pages/profile/components/AddCellModal.jsx` → L442, L465.
+2. Remove `{response.id}` from both lines.
+3. Add a committed regression test (`frontend/src/__tests__/AddCellModal.test.jsx`) that renders the success screen and asserts both rows end in `/api/sensor/` with no id and no `/api/power/` or `/api/teros/`.
+4. Run the repo's CI commands locally: `npm run lint`, the full Vitest suite, and `npm run coverage`.
+5. Pass the ship-gate (manifest checks + pr-precheck) before opening the PR.
+6. Open the PR against `jlab-sensing/ENTS-backend:main` with `Closes #828`.
 
-This is a preliminary plan, not a completed implementation.
+**Deviations during the build:** None material. The plan was followed as written; the only naming note is that the local reproduction test was `AddCellModal.issue828.test.jsx` (git-excluded), while the committed regression test is `AddCellModal.test.jsx`.
 
 ### Toolkit
 
-- **Tool:** Planning skill, repository investigation, and `plan-check` — pending for this issue.
-- **What it produced:** Pending.
-- **Difficulties:** Pending.
-- **What changed:** Pending.
+- **Tool:** Planning skill (produced `plan-828.md` / `plan.md` and `plan-comment.md`) and `plan-check`.
+- **What it produced:** A single-file, two-line plan tied to the maintainer's clarification and the `repro-828.md` evidence; `plan-check` graded the plan package **ACCEPT**.
+- **Difficulties:** The main planning risk was scope creep — it was tempting to also fix the pre-existing Prettier drift in the file; the plan explicitly ruled that out to keep the diff reviewable and focused on #828.
+- **What changed:** The plan locked the change to exactly L442/L465 plus one new test, and recorded "do not reformat unrelated lines" as an intentional boundary, which is what the eventual diff (2 files, +72/−2) honored.
 
 ---
 
@@ -335,14 +317,23 @@ The scout identified Ruff and a GitHub Actions testing workflow as possible veri
 
 I will confirm the actual commands from the repository documentation before running them.
 
-**Update (Unit 6):** I ran a targeted Vitest component test locally (`npx vitest run src/__tests__/AddCellModal.issue828.test.jsx`), which passed and confirmed the create-cell success screen uses `/api/sensor/` for both the Power and TEROS rows. I have not run a full browser end-to-end test because local login requires Google OAuth credentials.
+**Update (Unit 6):** I ran a targeted Vitest component test locally (`npx vitest run src/__tests__/AddCellModal.issue828.test.jsx`), which confirmed the host path was `/api/sensor/` for both rows. At that point I had not yet received the maintainer's "no sensor id" clarification.
+
+**Unit 7 results (the observable before/after):** The committed regression test `frontend/src/__tests__/AddCellModal.test.jsx` renders the real success screen with a mocked `addCell` returning `{ id: 42, name: 'Test Cell' }` (id `42` makes any appended id obvious) and asserts every rendered endpoint `toMatch(/\/api\/sensor\/$/)` and `not.toMatch(/\/api\/sensor\/\d/)`, with no `api/power/` or `api/teros/` text.
+
+- **Before the fix** (same committed test against base `upstream/main` `13413f2`, in a throwaway worktree): **FAIL** — `AssertionError: expected 'https://dirtviz.jlab.ucsc.edu/api/sen…' to match /\/api\/sensor\/$/`; both rows rendered `.../api/sensor/42`. The setup assertion (`toHaveLength(2)`) passed first, so this is a behavior failure, not a wiring error.
+- **After the fix** (branch HEAD `1a92673`): **PASS** — `Test Files 1 passed (1) | Tests 1 passed (1)`; both rows render `https://dirtviz.jlab.ucsc.edu/api/sensor/`.
+- **Full frontend suite (no regressions):** `Test Files 37 passed (37) | Tests 266 passed (266)` — `Profile.test.jsx` (which mocks `AddCellModal`) is among them and is unaffected.
+- **ESLint — the CI `frontend-lint` gate** (`cd frontend && npm run lint`): exit 0, clean, no output.
+- **Vitest via the CI command** (`cd frontend && npm run coverage`, the `frontend-test` gate): exit 0, all tests passing.
+- **Limitation:** A full browser end-to-end click-through was not run (Google OAuth login, no dev bypass); the before-fix run used the committed test against base code in a git worktree without modifying the working clone.
 
 ### Toolkit
 
-- **Tool:** Test and verification workflow — pending.
-- **What it produced:** Pending.
-- **Difficulties:** Pending.
-- **What changed:** Pending.
+- **Tool:** Vitest (component + full suite), ESLint, and the recorded evidence file `test_evidence.md`.
+- **What it produced:** A documented before/after — the committed test failing on base code (`/api/sensor/42`) and passing on the fix (`/api/sensor/`), a green 266/266 full suite, and clean lint/coverage runs matching the CI gates.
+- **Difficulties:** Proving a *behavior* change rather than just "tests pass" required running the same committed test against base code; I did that in a throwaway worktree so the before-fix FAIL is real evidence, not a reconstructed claim.
+- **What changed:** The regression test became the observable proof the fix works and guards against regression, and I aligned my local commands with the exact CI gate commands (`npm run coverage`) so a local pass predicts the CI result.
 
 ---
 
@@ -460,39 +451,64 @@ Because the requested change already exists, I recorded the outcome as **NOT REP
 
 `repro-check` graded the reproduction package **ACCEPT**. The voice guard initially blocked my follow-up comment because it claimed a passing test without attaching the evidence; after I added the actual Vitest output, the guard allowed the post. I posted the follow-up to the maintainer asking whether #828 is already resolved.
 
-I have not implemented a fix or opened a pull request.
+At this point I had not implemented a fix or opened a pull request; I was awaiting the maintainer's answer.
+
+### November 17, 2026 — Maintainer clarification received
+
+The maintainer **jmadden173** replied to my follow-up (https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6963665152):
+
+> "@Simret-Melak Thanks for contributing to the project. I guess I didn't check before making the issue. If you could can you just update it to just `/api/sensor/` with no sensor id, as that is the way we configure it."
+
+This reframed the issue. My Unit 6 finding (host path already `/api/sensor/`) was right, but the remaining defect was the appended `{response.id}`. The bug now reproduces under the clarified requirement, so I moved to implementation. I acknowledged the maintainer the next day (https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6994895498).
+
+### November 18, 2026 — Planning, implementing, ship-gate, and opening the PR
+
+I cut `fix/828-sensor-endpoints` from `upstream/main` (`13413f2`) and wrote `plan-828.md` / `plan.md` (tied to `repro-828.md`) plus `plan-comment.md`. `plan-check` graded the plan package **ACCEPT**.
+
+I implemented the two-line fix in `frontend/src/pages/profile/components/AddCellModal.jsx` (removing `{response.id}` at L442 and L465) and added a committed regression test, `frontend/src/__tests__/AddCellModal.test.jsx`. I verified before/after with the committed test (FAIL on base code rendering `/api/sensor/42`, PASS on the branch), ran the full frontend suite (266/266), and ran the CI gate commands (`npm run lint` exit 0; `npm run coverage` exit 0). Evidence is in `test_evidence.md`.
+
+I installed the Unit 7 ship-gate and wrote `ship-manifest.md` for `jlab-sensing/ENTS-backend` (ESLint via `npm run lint`; Vitest via `npm run coverage`, both sourced from `.github/workflows/test.yml` and the `frontend/Dockerfile` stages). The hook-test produced the expected ship-gate stop (recorded as `BLOCK (setup)` in the gate log); the voice-guard stop was not explicitly displayed in that run. Per `~/.claude/ship-gate/gate-log.md`: a hand-run at 20:16 returned **PASS** (both manifest checks green, all eight pr-precheck checks pass), and the hook run at 20:20 returned **PASS** as the PR opened.
+
+I opened the PR **#881** against `jlab-sensing/ENTS-backend:main`. The command I was asked to run would have pasted my whole local `pr_draft.md` — including its "LOCAL, excluded from the PR" banner and scaffolding — into the public description, so I first extracted just the template body into a clean `pr_body.md` and opened the PR with that. On open, CodeRabbit auto-appended a "Summary by CodeRabbit" block to the body and posted a "review in progress" comment; its check shows **pending**. No human review yet — status **Awaiting review**.
 
 ### Toolkit
 
-- **Tool:** `issue-scout`, Claude in Chrome, GitHub CLI, voice guard, rubric, and search-strategy files.
-- **What it produced:** Verified issue listings, deeper availability checks, multiple candidate evaluations, improved scan notes, and a selected issue.
-- **Difficulties:** GitHub OAuth access, unavailable browser controls in an earlier Claude Code session, misleading availability indicators, competing contributions, and overly ambitious issue scopes.
-- **What changed:** I connected the authenticated browser, strengthened my availability-first strategy, and selected a focused Python/backend issue instead of relying only on the first accepted candidate.
+- **Tool:** `issue-scout`, Claude in Chrome, GitHub CLI, voice guard, `repro-check`, `plan-check`, and the Unit 7 ship-gate.
+- **What it produced:** Verified issue listings, a reproduction and plan both graded ACCEPT, a two-line fix with a committed regression test, ship-gate PASS (manifest + pr-precheck), and the opened PR #881.
+- **Difficulties:** Misleading availability/issue-text ambiguity early on; and at PR time the requested `gh pr create` command would have published a local draft file verbatim.
+- **What changed:** I let the maintainer's clarification redefine the bug, aligned local checks with the CI gate commands via the ship-manifest, and extracted a clean `pr_body.md` so the published PR body was correct rather than the raw local draft.
 
 ---
 
 ## Pull Request
 
-**PR Link:** Not opened yet.
+**PR Link:** https://github.com/jlab-sensing/ENTS-backend/pull/881
 
-**PR Description:** Pending implementation.
+**PR Description:** The PR follows the repo's pull-request template. It states the problem (both success-screen rows rendered `/api/sensor/{response.id}`, e.g. `/api/sensor/42`), quotes the maintainer's "no sensor id" clarification, and shows the fix as a before/after diff removing `{response.id}` at L442/L465. It lists the test procedure and actual results (regression test PASS, 266/266 full suite, `npm run lint` exit 0, `npm run coverage` exit 0), two explicit limitations (OAuth e2e not run; pre-existing Prettier drift left untouched to keep the diff scoped), an AI-assistance disclosure, the completed task list, and `Closes #828`. Diff stat: 2 files, +72/−2 (one 2-line source edit plus one new test file).
 
-The eventual pull request will describe the original problem, the implemented changes, tests performed, any known limitations, and applicable AI-assistance disclosures required by the repository.
+**What actually happened when the PR was opened:**
+
+- The PR was created at 2026-11-19 01:20 UTC (2026-11-18 evening local), state **OPEN**, `mergeable: MERGEABLE`, base `main`, head `fix/828-sensor-endpoints`, author `Simret-Melak`.
+- I did **not** use the raw local `pr_draft.md` the original command named — it begins with a "LOCAL, excluded from the PR" banner and carries title/target scaffolding. I extracted only the template body into a clean `pr_body.md` and opened the PR with `--body-file pr_body.md`, so the published description is the correct template content.
+- **Hook evidence:** the ship-gate ran through the hook at this open and returned **PASS** (`~/.claude/ship-gate/gate-log.md`, 2026-11-18 20:20 entry: both manifest checks green, all eight pr-precheck checks pass), reusing the within-30-minutes hand-run PASS.
+- **Automated bot activity:** CodeRabbit auto-appended a "Summary by CodeRabbit" release-note block to the PR body and posted a "review in progress" comment (`issuecomment-6996726843`). `gh pr checks` shows a single **CodeRabbit** check, status **pending**. No other CI status checks are reported on the PR, and there are no human reviews (`reviewDecision` is empty).
 
 ### Maintainer Feedback
 
-- **November 12, 2026:** Posted my claim comment on ENTS-backend #828.
-- **November 16, 2026:** Posted a follow-up comment reporting the NOT REPRODUCED finding (the requested `/api/sensor/` change already exists) and asking the maintainer whether the issue is already resolved: https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6924870574
-- **Pending:** Maintainer response on whether #828 is already resolved or whether another scenario remains.
+- **November 12, 2026:** Posted my claim comment on ENTS-backend #828 (https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6836884164).
+- **November 16, 2026:** Posted a follow-up reporting the Phase-1 NOT REPRODUCED finding and asking whether #828 was already resolved (https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6924870574).
+- **November 17, 2026:** Maintainer **jmadden173** clarified the requirement — "just `/api/sensor/` with no sensor id, as that is the way we configure it" (https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6963665152).
+- **November 18, 2026:** I acknowledged the clarification and confirmed I would implement it (https://github.com/jlab-sensing/ENTS-backend/issues/828#issuecomment-6994895498).
+- **After PR open:** No maintainer review yet — only CodeRabbit's automated activity.
 
-**Status:** Not opened — claim and follow-up posted, reproduction completed (NOT REPRODUCED), awaiting maintainer confirmation. No fix implemented and no pull request opened.
+**Status:** **Awaiting review.** PR #881 is open; ship-gate passed; CodeRabbit check pending; no human review yet.
 
 ### Toolkit
 
-- **Tool:** `pr-precheck`, PR preparation workflow, and monitoring tools — pending.
-- **What it produced:** Pending.
-- **Difficulties:** Pending.
-- **What changed:** Pending.
+- **Tool:** `pr-precheck` (run inside the ship-gate), the ship-gate manifest, and GitHub CLI (`gh pr create`, `gh pr view`).
+- **What it produced:** A ship-gate PASS gating the PR, and PR #881 opened against upstream with a clean, template-correct body.
+- **Difficulties:** The requested `gh pr create --body-file pr_draft.md` would have published a local draft file (banner + scaffolding) as the public description; and I verified a comment-ID mismatch — the maintainer clarification URL in my draft/plan pointed at my own claim comment rather than jmadden173's actual comment.
+- **What changed:** I split a clean `pr_body.md` out of the draft before opening the PR, and corrected the maintainer-clarification citation to the real comment (`#issuecomment-6963665152`) in this story.
 
 ---
 
@@ -568,7 +584,7 @@ My next goal is to claim the issue appropriately, reproduce the reported problem
 
 ---
 
-**Current Contribution Status — November 16, 2026**
+**Current Contribution Status — November 18, 2026**
 
 - [x] Created and improved issue-scout.
 - [x] Completed multiple issue scans and rubric evaluations.
@@ -580,10 +596,13 @@ My next goal is to claim the issue appropriately, reproduce the reported problem
 - [x] Added the GitHub claim and follow-up comment URLs to this story.
 - [x] Configured CLAUDE.local.md in my fork (kept local, excluded from Git).
 - [x] Set up the local repository and investigated the frontend code and Git history.
-- [x] Completed local reproduction — result: NOT REPRODUCED (the requested `/api/sensor/` change already exists).
-- [x] Ran a passing Vitest component test for the create-cell endpoints.
+- [x] Completed local reproduction — Phase 1 NOT REPRODUCED (host path already `/api/sensor/`), then Phase 2 REPRODUCED under the maintainer's "no sensor id" clarification.
+- [x] Ran Vitest component tests for the create-cell endpoints (before-fix FAIL, after-fix PASS).
 - [x] Received an ACCEPT verdict from repro-check on the reproduction package.
 - [x] Posted a maintainer follow-up with the reproduction findings.
-- [ ] Confirmed with the maintainer whether #828 is already resolved.
-- [ ] Implemented and tested a fix (not started; may be unnecessary if already resolved).
-- [ ] Opened and monitored the pull request.
+- [x] Received the maintainer's clarification (jmadden173, Nov 17) and acknowledged it (Nov 18).
+- [x] Graded the plan package with plan-check — verdict ACCEPT.
+- [x] Implemented and tested the fix (two-line change + committed regression test; 266/266 suite, lint and coverage clean).
+- [x] Installed the ship-gate, wrote the manifest, and passed it (manifest checks + pr-precheck, PASS).
+- [x] Opened the pull request — PR #881, status Awaiting review.
+- [ ] Monitor the pull request and respond to review (Unit 8).
